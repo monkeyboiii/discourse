@@ -273,19 +273,6 @@ RSpec.describe Upload do
     expect(upload.thumbnail_width).to eq(nil)
   end
 
-  it "returns error when image resolution is to big" do
-    SiteSetting.max_image_megapixels = 10
-    upload = UploadCreator.new(huge_image, "image.png").create_for(user_id)
-    expect(upload.persisted?).to eq(false)
-    expect(upload.errors.messages[:base].first).to eq(
-      I18n.t(
-        "upload.images.larger_than_x_megapixels",
-        max_image_megapixels: 10,
-        original_filename: upload.original_filename,
-      ),
-    )
-  end
-
   it "extracts file extension" do
     created_upload = UploadCreator.new(image, image_filename).create_for(user_id)
     expect(created_upload.extension).to eq("png")
@@ -860,6 +847,13 @@ RSpec.describe Upload do
     end
   end
 
+  describe ".sha1_from_base62_encoded" do
+    it "rejects base62 strings that are too long" do
+      long_base62 = "A" * 1000
+      expect(Upload.sha1_from_base62_encoded(long_base62)).to be_nil
+    end
+  end
+
   def enable_secure_uploads
     setup_s3
     SiteSetting.secure_uploads = true
@@ -1033,7 +1027,7 @@ RSpec.describe Upload do
 
     it "correctly handles error when file is too large to download" do
       white_image.stubs(:local?).returns(false)
-      FileStore::LocalStore.any_instance.stubs(:download).returns(nil).once
+      FileHelper.stubs(:download).returns(nil)
 
       expect(white_image.dominant_color).to eq(nil)
       expect(white_image.dominant_color(calculate_if_missing: true)).to eq("")
@@ -1042,11 +1036,7 @@ RSpec.describe Upload do
 
     it "correctly handles error when file has HTTP error" do
       white_image.stubs(:local?).returns(false)
-      FileStore::LocalStore
-        .any_instance
-        .stubs(:download)
-        .raises(OpenURI::HTTPError.new("Error", nil))
-        .once
+      FileHelper.stubs(:download).raises(OpenURI::HTTPError.new("Error", nil))
 
       expect(white_image.dominant_color).to eq(nil)
       expect(white_image.dominant_color(calculate_if_missing: true)).to eq("")

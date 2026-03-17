@@ -520,6 +520,7 @@ class Topic < ActiveRecord::Base
 
   def limit_private_messages_per_day
     return unless private_message?
+    return if subtype == TopicSubtype.notify_moderators
     apply_per_day_rate_limit_for("pms", :max_personal_messages_per_day)
   end
 
@@ -996,7 +997,7 @@ class Topic < ActiveRecord::Base
     post_type =
       archetype == Archetype.private_message ? " AND post_type <> #{Post.types[:small_action]}" : ""
 
-    result = DB.query_single(<<~SQL, topic_id: topic_id)
+    result = DB.query_single(<<~SQL, topic_id:)
       UPDATE topics
       SET
         highest_staff_post_number = (
@@ -1053,6 +1054,8 @@ class Topic < ActiveRecord::Base
        WHERE topic_id = :topic_id
          AND last_read_post_number > :highest
     SQL
+
+    highest
   end
 
   cattr_accessor :update_featured_topics
@@ -1107,6 +1110,12 @@ class Topic < ActiveRecord::Base
         # category is private. this is only done if the category
         # has actually changed to avoid noise.
         DB.after_commit { Jobs.enqueue(:update_topic_upload_security, topic_id: self.id) }
+
+        # Notify tracking state of category change so users who lost access
+        # have the topic removed from their tracking state
+        if SiteSetting.experimental_topic_category_change_notification
+          DB.after_commit { TopicTrackingState.publish_category_change(self, old_category) }
+        end
       end
 
       Category.where(id: new_category.id).update_all("topic_count = topic_count + 1")
@@ -1192,7 +1201,7 @@ class Topic < ActiveRecord::Base
       if group_user
         group_user.destroy
         allowed_groups.reload
-        add_small_action(removed_by, "removed_group", group.name)
+        add_small_action(removed_by, "removed_group", group.name, skip_guardian: true)
         return true
       end
     end
@@ -1357,17 +1366,22 @@ class Topic < ActiveRecord::Base
 
       topic
     elsif opts[:title]
-      post_mover.to_new_topic(opts[:title], opts[:category_id], opts[:tags])
+      post_mover.to_new_topic(
+        opts[:title],
+        opts[:category_id],
+        tag_ids: opts[:tag_ids],
+        tags: opts[:tags],
+      )
     end
   end
 
   # Updates the denormalized statistics of a topic including featured posters. They shouldn't
   # go out of sync unless you do something drastic live move posts from one topic to another.
   # this recalculates everything.
-  def update_statistics
+  def update_statistics!
     feature_topic_users
     update_action_counts
-    Topic.reset_highest(id)
+    self.highest_post_number = Topic.reset_highest(id)
   end
 
   def update_action_counts
@@ -2174,10 +2188,6 @@ class Topic < ActiveRecord::Base
     fields
   end
 
-  def has_localization?(locale = I18n.locale)
-    localizations.exists?(locale: locale.to_s.sub("-", "_"))
-  end
-
   private
 
   def invite_to_private_message(invited_by, target_user, guardian)
@@ -2304,6 +2314,7 @@ end
 #  idxtopicslug                            (slug) WHERE ((deleted_at IS NULL) AND (slug IS NOT NULL))
 #  index_topics_on_bannered_until          (bannered_until) WHERE (bannered_until IS NOT NULL)
 #  index_topics_on_bumped_at_public        (bumped_at) WHERE ((deleted_at IS NULL) AND ((archetype)::text <> 'private_message'::text))
+#  index_topics_on_category_id             (category_id) WHERE ((deleted_at IS NULL) AND ((archetype)::text <> 'private_message'::text))
 #  index_topics_on_created_at_and_visible  (created_at,visible) WHERE ((deleted_at IS NULL) AND ((archetype)::text <> 'private_message'::text))
 #  index_topics_on_external_id             (external_id) UNIQUE WHERE (external_id IS NOT NULL)
 #  index_topics_on_id_and_deleted_at       (id,deleted_at)

@@ -18,7 +18,6 @@ require "rubygems"
 require "rbtrace" if RUBY_ENGINE == "ruby"
 require "pry"
 require "pry-rails"
-require "pry-stack_explorer"
 require "fabrication"
 require "mocha/api"
 require "certified"
@@ -347,6 +346,7 @@ RSpec.configure do |config|
 
     SystemThemesManager.clear_system_theme_user_history!
     ThemeField.delete_all
+    ThemeSettingsMigration.delete_all
     JavascriptCache.delete_all
     ThemeSiteSetting.delete_all
     SiteSetting.refresh!
@@ -489,20 +489,25 @@ RSpec.configure do |config|
 
         if example_file_path
           expanded_example_file_path = Pathname.new(example_file_path).expand_path
-          is_within_rails_root = expanded_example_file_path.to_s.start_with?(Rails.root.to_s)
+          match =
+            example_file_path.to_s.match(
+              %r{^#{Regexp.escape(Rails.root.to_s)}/(plugins|themes|spec)/([^/]+)/},
+            )
 
-          if is_within_rails_root
-            extension_match = example_file_path.match(%r{/(plugins|themes)/([^/]+)/})
+          if match
             should_set_raise_on_deprecation =
-              if extension_match
-                type_dir, extension_name = extension_match.captures
-                extension_root = Rails.root.join(type_dir, extension_name)
+              begin
+                type_dir, extension_name = match.captures
 
-                # Preinstalled plugins/themes don't have a .git directory
-                !extension_root.join(".git").exist?
-              else
-                # Not a plugin or theme spec
-                true
+                case type_dir
+                when "spec"
+                  true
+                when "plugins"
+                  Discourse.preinstalled_plugins.any? { |p| p.directory_name == extension_name }
+                when "themes"
+                  # Preinstalled themes don't have a .git directory
+                  !Rails.root.join(type_dir, extension_name, ".git").exist?
+                end
               end
 
             ENV["EMBER_RAISE_ON_DEPRECATION"] = "1" if should_set_raise_on_deprecation
@@ -792,7 +797,7 @@ RSpec.configure do |config|
 
   config.before(:each, type: :system) do |example|
     if !system_tests_initialized
-      # On Rails 7, we have seen instances of deadlocks between the lock in [ActiveRecord::ConnectionAdapaters::AbstractAdapter](https://github.com/rails/rails/blob/9d1673853f13cd6f756315ac333b20d512db4d58/activerecord/lib/active_record/connection_adapters/abstract_adapter.rb#L86)
+      # On Rails 7, we have seen instances of deadlocks between the lock in [ActiveRecord::ConnectionAdapters::AbstractAdapter](https://github.com/rails/rails/blob/9d1673853f13cd6f756315ac333b20d512db4d58/activerecord/lib/active_record/connection_adapters/abstract_adapter.rb#L86)
       # and the lock in [ActiveRecord::ModelSchema](https://github.com/rails/rails/blob/9d1673853f13cd6f756315ac333b20d512db4d58/activerecord/lib/active_record/model_schema.rb#L550).
       # To work around this problem, we are going to preload all the model schemas before running any system tests so that
       # the lock in ActiveRecord::ModelSchema is not acquired at runtime. This is a temporary workaround while we report
@@ -814,7 +819,9 @@ RSpec.configure do |config|
       slowMo: ENV["PLAYWRIGHT_SLOW_MO_MS"].to_i, # https://playwright.dev/docs/api/class-browsertype#browser-type-launch-option-slow-mo
       playwright_cli_executable_path: "./node_modules/.bin/playwright",
       logger: Logger.new(IO::NULL),
-      timezoneId: example.metadata[:timezone],
+      # NOTE: timezoneId is NOT set here because the driver is cached and reused,
+      # so only the first test's timezone would be applied. Instead, we use CDP
+      # to override the timezone per-test in the before(:each) hook below.
       colorScheme: example.metadata[:color_scheme],
     }
 
@@ -880,6 +887,15 @@ RSpec.configure do |config|
 
     page.driver.with_playwright_page do |pw_page|
       $playwright_logger = PlaywrightLogger.new(pw_page)
+
+      # Apply timezone override via CDP if timezone metadata is present.
+      # We use CDP instead of the driver's timezoneId option because the driver
+      # instance is cached and reused between tests, so timezoneId only affects
+      # the first test. CDP override works at runtime for each test.
+      if (tz = example.metadata[:timezone])
+        cdp = pw_page.context.new_cdp_session(pw_page)
+        cdp.send_message("Emulation.setTimezoneOverride", params: { timezoneId: tz })
+      end
     end
   end
 
@@ -1189,9 +1205,7 @@ def plugin_from_fixtures(plugin_name)
   FileUtils.mkdir(tmp_plugins_dir) if !Dir.exist?(tmp_plugins_dir)
   FileUtils.cp_r("#{Rails.root}/spec/fixtures/plugins/#{plugin_name}", tmp_plugins_dir)
 
-  plugin = Plugin::Instance.new
-  plugin.path = File.join(tmp_plugins_dir, plugin_name, "plugin.rb")
-  plugin
+  Plugin::Instance.parse_from_source(File.join(tmp_plugins_dir, plugin_name, "plugin.rb"))
 end
 
 def concurrency_safe_tmp_dir

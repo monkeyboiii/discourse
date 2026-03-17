@@ -37,7 +37,6 @@ html {
   font-size: var(--base-font-size);
   line-height: var(--line-height-large);
   background-color: var(--secondary);
-  overflow-y: scroll;
   direction: ltr;
 
   &.text-size-smallest {
@@ -157,10 +156,6 @@ tbody tr {
       animation: background-fade-highlight 2.5s ease-out;
     }
   }
-}
-
-.topic-list-header tr {
-  border-bottom: var(--table-border-width) solid var(--table-border-color);
 }
 
 // https://en.wikipedia.org/wiki/Ruby_character

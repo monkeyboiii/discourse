@@ -4,7 +4,7 @@ import { action } from "@ember/object";
 import didInsert from "@ember/render-modifiers/modifiers/did-insert";
 import didUpdate from "@ember/render-modifiers/modifiers/did-update";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import { modifier as modifierFn } from "ember-modifier";
 import loadFullCalendar from "discourse/lib/load-full-calendar";
 import DiscourseURL from "discourse/lib/url";
@@ -121,7 +121,7 @@ export default class FullCalendar extends Component {
           this.activeTooltip = await this.tooltip.show(el, {
             identifier: "post-event-tooltip",
             triggers: ["hover"],
-            content: htmlSafe(
+            content: trustHTML(
               // this is a workaround to allow linebreaks in the tooltip
               "<div>" + htmlContent + "</div>"
             ),
@@ -168,6 +168,7 @@ export default class FullCalendar extends Component {
   updateCalendar() {
     if (this.calendar) {
       this.calendar.setOption("headerToolbar", this.headerToolbar);
+      this.calendar.refetchEvents();
     }
   }
 
@@ -197,7 +198,12 @@ export default class FullCalendar extends Component {
   <template>
     <div
       {{didInsert this.setupCalendar}}
-      {{didUpdate this.updateCalendar @events this.capabilities.viewport.md}}
+      {{didUpdate
+        this.updateCalendar
+        @events
+        @refreshKey
+        this.capabilities.viewport.md
+      }}
       {{this.forceUpdateSize}}
       ...attributes
     >

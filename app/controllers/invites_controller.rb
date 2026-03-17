@@ -3,8 +3,12 @@
 require "csv"
 
 class InvitesController < ApplicationController
+  ALLOWED_BULK_INVITE_COLUMNS = %w[email groups topic_id locale]
+
   requires_login only: %i[
                    create
+                   create_multiple
+                   update
                    retrieve
                    destroy
                    destroy_all_expired
@@ -93,7 +97,7 @@ class InvitesController < ApplicationController
             email: email,
             description: params[:description],
             domain: params[:domain],
-            skip_email: params[:skip_email],
+            skip_email: skip_email_param,
             invited_by: current_user,
             custom_message: params["custom_message"],
             max_redemptions_allowed: params[:max_redemptions_allowed],
@@ -149,7 +153,7 @@ class InvitesController < ApplicationController
           email: params[:email],
           description: params[:description],
           domain: params[:domain],
-          skip_email: params[:skip_email],
+          skip_email: skip_email_param,
           invited_by: current_user,
           custom_message: params[:custom_message],
           max_redemptions_allowed: params[:max_redemptions_allowed],
@@ -275,6 +279,10 @@ class InvitesController < ApplicationController
       end
 
       if params[:send_email]
+        if !SiteSetting.allow_email_invites
+          return render_json_error(I18n.t("invite.email_invites_disabled"))
+        end
+
         if invite.emailed_status != Invite.emailed_status_types[:pending]
           begin
             RateLimiter.new(current_user, "resend-invite-per-hour", 10, 1.hour).performed!
@@ -424,8 +432,8 @@ class InvitesController < ApplicationController
   end
 
   def destroy_all_expired
-    guardian.ensure_can_destroy_all_invites!
     user = fetch_user_from_params
+    guardian.ensure_can_destroy_all_invites!(user)
 
     Invite
       .where(invited_by: user)
@@ -436,6 +444,10 @@ class InvitesController < ApplicationController
   end
 
   def resend_invite
+    if !SiteSetting.allow_email_invites
+      return render_json_error(I18n.t("invite.email_invites_disabled"))
+    end
+
     params.require(:email)
     RateLimiter.new(current_user, "resend-invite-per-hour", 10, 1.hour).performed!
 
@@ -448,6 +460,10 @@ class InvitesController < ApplicationController
   end
 
   def resend_all_invites
+    if !SiteSetting.allow_email_invites
+      return render_json_error(I18n.t("invite.email_invites_disabled"))
+    end
+
     guardian.ensure_can_resend_all_invites!
 
     begin
@@ -476,19 +492,29 @@ class InvitesController < ApplicationController
 
         csv_header = nil
         invites = []
+        valid_columns = nil
 
         CSV.foreach(file.tempfile, encoding: "bom|utf-8") do |row|
           # Try to extract a CSV header, if it exists
           if csv_header.nil?
             if row[0] == "email"
               csv_header = row
+              valid_columns = Set.new(ALLOWED_BULK_INVITE_COLUMNS + UserField.pluck(:name))
               next
             else
               csv_header = %w[email groups topic_id]
             end
           end
 
-          invites.push(csv_header.zip(row).map.to_h.filter { |k, v| v.present? }) if row[0].present?
+          if row[0].present?
+            invite =
+              csv_header
+                .zip(row)
+                .map
+                .to_h
+                .filter { |k, v| v.present? && (!valid_columns || valid_columns.include?(k)) }
+            invites.push(invite)
+          end
 
           break if invites.count >= SiteSetting.max_bulk_invites
         end
@@ -528,6 +554,10 @@ class InvitesController < ApplicationController
   end
 
   private
+
+  def skip_email_param
+    !SiteSetting.allow_email_invites || params[:skip_email]
+  end
 
   def show_invite(invite)
     email = Email.obfuscate(invite.email)

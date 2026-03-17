@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe CategoriesController do
-  let(:admin) { Fabricate(:admin) }
+  let!(:admin) { Fabricate(:admin) }
   let!(:category) { Fabricate(:category, user: admin) }
   fab!(:user)
 
@@ -500,6 +500,20 @@ RSpec.describe CategoriesController do
           expect(response.status).to eq(422)
           expect(response.parsed_body["errors"]).to be_present
         end
+
+        it "rejects too long descriptions" do
+          limit = CategoriesController::MAX_DESCRIPTION_PARAM_LENGTH
+          post "/categories.json",
+               params: {
+                 name: "Long Description Category",
+                 description: "a" * (limit + 1),
+               }
+
+          expect(response.status).to eq(422)
+          expect(response.parsed_body["errors"].first).to eq(
+            I18n.t("category.errors.description_too_long", count: limit),
+          )
+        end
       end
 
       describe "success" do
@@ -539,7 +553,115 @@ RSpec.describe CategoriesController do
           expect(category.category_groups.map { |g| [g.group_id, g.permission_type] }.sort).to eq(
             [[Group[:everyone].id, readonly], [Group[:staff].id, create_post]],
           )
-          expect(UserHistory.count).to eq(5)
+          expect(UserHistory.count).to eq(1)
+        end
+
+        it "creates category with description containing markdown" do
+          post "/categories.json",
+               params: {
+                 name: "Test Category",
+                 description: "This is a **test** with [link](https://example.com)",
+               }
+
+          expect(response.status).to eq(200)
+          cat_json = response.parsed_body["category"]
+
+          category = Category.find(cat_json["id"])
+          expect(category.description).to include("<strong>test</strong>")
+          expect(category.description).to include('<a href="https://example.com')
+          expect(category.description).not_to include("**test**")
+          expect(category.topic.first_post.raw).to include("**test**")
+          expect(category.topic.first_post.raw).to include("[link](https://example.com)")
+        end
+
+        it "sanitizes description to prevent XSS" do
+          post "/categories.json",
+               params: {
+                 name: "XSS Test Category",
+                 description:
+                   "This has <script>alert('xss')</script> and <img src=x onerror=alert('xss')>",
+               }
+
+          expect(response.status).to eq(200)
+          cat_json = response.parsed_body["category"]
+
+          category = Category.find(cat_json["id"])
+          expect(category.description).not_to include("<script>")
+          expect(category.description).not_to include("&lt;script&gt;")
+          expect(category.description).to include("&lt;img")
+        end
+
+        describe "when category_type is provided" do
+          before { SiteSetting.enable_simplified_category_creation = true }
+
+          it "creates a category with the category type" do
+            post "/categories.json", params: { name: "Test Category", category_type: "discussion" }
+
+            expect(response.status).to eq(200)
+            cat_json = response.parsed_body["category"]
+            expect(cat_json).to be_present
+            expect(cat_json["category_types"]).to eq(
+              {
+                "discussion" => {
+                  "available" => true,
+                  "configuration_schema" => {
+                  },
+                  "description" => I18n.t("category_types.discussion.description"),
+                  "icon" => "memo",
+                  "id" => "discussion",
+                  "name" => I18n.t("category_types.discussion.name"),
+                  "title" => "discussion",
+                },
+              },
+            )
+          end
+
+          it "can set site_settings for the category type when they match the schema" do
+            Categories::Types::Discussion.stubs(:configuration_schema).returns(
+              { site_settings: { max_category_nesting: 2 } },
+            )
+            post "/categories.json",
+                 params: {
+                   name: "Test Category",
+                   category_type: "discussion",
+                   category_type_site_settings: {
+                     "max_category_nesting" => 3,
+                   },
+                 }
+
+            expect(response.status).to eq(200)
+            cat_json = response.parsed_body["category"]
+            expect(cat_json).to be_present
+            expect(SiteSetting.max_category_nesting).to eq(3)
+          end
+
+          it "will set the schema value for site settings when overrides are not provided" do
+            SiteSetting.max_category_nesting = 3
+            Categories::Types::Discussion.stubs(:configuration_schema).returns(
+              { site_settings: { max_category_nesting: 2 } },
+            )
+            post "/categories.json", params: { name: "Test Category", category_type: "discussion" }
+
+            expect(response.status).to eq(200)
+            expect(SiteSetting.max_category_nesting).to eq(2)
+          end
+
+          context "when the category type is not available" do
+            before { Categories::Types::Discussion.stubs(:available?).returns(false) }
+
+            it "does not create a category" do
+              post "/categories.json",
+                   params: {
+                     name: "Test Category",
+                     category_type: "discussion",
+                   }
+              expect(response.status).to eq(422)
+              expect(response.parsed_body["errors"]).to be_present
+              expect(response.parsed_body["errors"].first).to eq(
+                I18n.t("category_types.not_available", type_name: "Discussion"),
+              )
+            end
+          end
         end
       end
     end
@@ -641,6 +763,45 @@ RSpec.describe CategoriesController do
         expect(UserHistory.count).to eq(1)
         expect(TopicTimer.where(id: id).exists?).to eq(false)
       end
+    end
+  end
+
+  describe "#move" do
+    it "requires login" do
+      post "/category/#{category.id}/move.json", params: { category_id: category.id, position: 0 }
+      expect(response.status).to eq(403)
+    end
+
+    it "raises an error for a non-staff user" do
+      sign_in(user)
+      post "/category/#{category.id}/move.json", params: { category_id: category.id, position: 0 }
+      expect(response.status).to eq(403)
+    end
+
+    it "blocks a moderator from moving a category they cannot see" do
+      SiteSetting.moderators_manage_categories = true
+      moderator = Fabricate(:moderator)
+      group = Fabricate(:group)
+      restricted_category = Fabricate(:category, read_restricted: true)
+      restricted_category.set_permissions(group => :full)
+      restricted_category.save!
+      original_position = restricted_category.position
+
+      sign_in(moderator)
+      post "/category/#{restricted_category.id}/move.json",
+           params: {
+             category_id: restricted_category.id,
+             position: 0,
+           }
+
+      expect(response.status).to eq(403)
+      expect(restricted_category.reload.position).to eq(original_position)
+    end
+
+    it "allows an admin to move any category" do
+      sign_in(admin)
+      post "/category/#{category.id}/move.json", params: { category_id: category.id, position: 0 }
+      expect(response.status).to eq(200)
     end
   end
 
@@ -767,11 +928,13 @@ RSpec.describe CategoriesController do
                 custom_fields: {
                   "dancing" => "frogs",
                   "running" => %w[turtle salamander],
+                  "enable_thingy" => true,
                 },
                 minimum_required_tags: "",
                 allow_global_tags: "true",
                 required_tag_groups: [{ name: tag_group.name, min_count: 2 }],
                 form_template_ids: [form_template_1.id, form_template_2.id],
+                topic_title_placeholder: "test topic title placeholder",
               }
 
           expect(response.status).to eq(200)
@@ -786,6 +949,7 @@ RSpec.describe CategoriesController do
           expect(category.custom_fields).to eq(
             "dancing" => "frogs",
             "running" => %w[turtle salamander],
+            "enable_thingy" => "true",
           )
           expect(category.minimum_required_tags).to eq(0)
           expect(category.allow_global_tags).to eq(true)
@@ -793,6 +957,7 @@ RSpec.describe CategoriesController do
           expect(category.category_required_tag_groups.first.tag_group.id).to eq(tag_group.id)
           expect(category.category_required_tag_groups.first.min_count).to eq(2)
           expect(category.form_template_ids).to eq([form_template_1.id, form_template_2.id])
+          expect(category.topic_title_placeholder).to eq("test topic title placeholder")
         end
 
         it "logs the changes correctly" do
@@ -813,7 +978,7 @@ RSpec.describe CategoriesController do
                 },
               }
           expect(response.status).to eq(200)
-          expect(UserHistory.count).to eq(6)
+          expect(UserHistory.count).to eq(2)
         end
 
         it "does not log false permission changes when everyone group name is localized" do
@@ -973,6 +1138,16 @@ RSpec.describe CategoriesController do
           expect(category.form_template_ids.count).to eq(0)
         end
 
+        it "persists boolean false for custom fields" do
+          put "/categories/#{category.id}.json",
+              params: { custom_fields: { bool_field: false } }.to_json,
+              headers: {
+                "CONTENT_TYPE" => "application/json",
+              }
+          expect(response.status).to eq(200)
+          expect(category.reload.custom_fields).to have_key("bool_field")
+        end
+
         it "doesn't set category moderation groups if the enable_category_group_moderation setting is false" do
           SiteSetting.enable_category_group_moderation = false
 
@@ -1029,6 +1204,36 @@ RSpec.describe CategoriesController do
           expect(response.status).to eq(200)
           expect(category.reload.email_in).to eq("ted@discourse.org")
           expect(category.reload.minimum_required_tags).to eq(5)
+        end
+
+        context "when category_type_site_settings are provided" do
+          before { SiteSetting.enable_simplified_category_creation = true }
+
+          it "can set site_settings for the category type when they match the schema" do
+            Categories::Types::Discussion.stubs(:configuration_schema).returns(
+              { site_settings: { max_category_nesting: 2 } },
+            )
+            put "/categories/#{category.id}.json",
+                params: {
+                  category_type_site_settings: {
+                    "max_category_nesting" => 3,
+                  },
+                }
+
+            expect(response.status).to eq(200)
+            expect(SiteSetting.max_category_nesting).to eq(3)
+          end
+
+          it "does not set the schema value for site settings when overrides are not provided" do
+            SiteSetting.max_category_nesting = 3
+            Categories::Types::Discussion.stubs(:configuration_schema).returns(
+              { site_settings: { max_category_nesting: 2 } },
+            )
+            put "/categories/#{category.id}.json", params: {}
+
+            expect(response.status).to eq(200)
+            expect(SiteSetting.max_category_nesting).to eq(3)
+          end
         end
       end
     end
@@ -1229,6 +1434,7 @@ RSpec.describe CategoriesController do
 
     describe "Showing top topics from private categories" do
       it "returns the top topic from the private category when the user is a member" do
+        SiteSetting.categories_topics = 5
         restricted_group = Fabricate(:group)
         private_cat = Fabricate(:private_category, group: restricted_group)
         private_topic = Fabricate(:topic, category: private_cat, like_count: 1000, posts_count: 100)
@@ -1249,10 +1455,11 @@ RSpec.describe CategoriesController do
 
     describe "Showing hot topics from private categories" do
       it "returns the hot topic from the private category when the user is a member" do
+        SiteSetting.categories_topics = 5
         restricted_group = Fabricate(:group)
         private_cat = Fabricate(:private_category, group: restricted_group)
         private_topic = Fabricate(:topic, category: private_cat, like_count: 1000, posts_count: 100)
-        TopicHotScore.update_scores
+        TopicHotScore.create!(topic_id: private_topic.id, score: 1.0)
         restricted_group.add(user)
         sign_in(user)
 
@@ -1264,6 +1471,34 @@ RSpec.describe CategoriesController do
             .detect { |t| t.dig("id") == private_topic.id }
 
         expect(parsed_topic).to be_present
+      end
+    end
+
+    it "only counts categories the user can see when calculating topics per page" do
+      SiteSetting.categories_topics = 0
+      restricted_group = Fabricate(:group)
+      4.times { Fabricate(:private_category, group: restricted_group) }
+
+      # anon sees 2 categories (uncategorized + category): 2 * 1.5 = 3, clamped to min 5
+      get "/categories_and_latest.json"
+      expect(response.parsed_body["topic_list"]["topics"].size).to eq(5)
+
+      # member sees 6 categories (2 + 4 private): 6 * 1.5 = 9
+      restricted_group.add(user)
+      sign_in(user)
+      get "/categories_and_latest.json"
+      expect(response.parsed_body["topic_list"]["topics"].size).to eq(9)
+    end
+
+    it "enforces maximum cap on topics per page" do
+      SiteSetting.categories_topics = 0
+      5.times { Fabricate(:category) }
+
+      # 7 categories (uncategorized + category + 5 new): 7 * 1.5 = 10, capped to max 7
+      stub_const(CategoriesController, :MAX_CATEGORIES_TOPICS, 7) do
+        sign_in(admin)
+        get "/categories_and_latest.json"
+        expect(response.parsed_body["topic_list"]["topics"].size).to eq(7)
       end
     end
   end
@@ -1514,6 +1749,22 @@ RSpec.describe CategoriesController do
           "Notfoo",
         )
       end
+
+      it "matches categories with accented names using unaccented search term" do
+        Fabricate(:category, name: "Éditions")
+
+        post "/categories/search.json", params: { term: "editions" }
+
+        expect(response.parsed_body["categories"].map { |c| c["name"] }).to include("Éditions")
+      end
+
+      it "matches categories with unaccented names using accented search term" do
+        Fabricate(:category, name: "Editions")
+
+        post "/categories/search.json", params: { term: "Éditions" }
+
+        expect(response.parsed_body["categories"].map { |c| c["name"] }).to include("Editions")
+      end
     end
 
     context "with parent_category_id" do
@@ -1733,33 +1984,55 @@ RSpec.describe CategoriesController do
     end
   end
 
-  describe "#hierachical_search" do
+  describe "#hierarchical_search" do
+    fab!(:category) { Fabricate(:category, name: "Parent Category") }
+    fab!(:category_child_2) { Fabricate(:category, name: "Child Two", parent_category: category) }
+    fab!(:category_child_1) { Fabricate(:category, name: "Child One", parent_category: category) }
+
     before { sign_in(user) }
 
-    it "produces categories with an empty term" do
-      get "/categories/hierarchical_search.json", params: { term: "" }
+    it "returns the right categories when term param is present" do
+      get "/categories/hierarchical_search.json", params: { term: "Child One" }
 
       expect(response.status).to eq(200)
-      expect(response.parsed_body["categories"].length).not_to eq(0)
+
+      categories = response.parsed_body["categories"]
+
+      expect(categories.length).to eq(2)
+      expect(categories.map { |c| c["id"] }).to eq([category.id, category_child_1.id])
     end
 
-    it "produces exactly 5 subcategories" do
-      subcategories = Fabricate.times(6, :category, parent_category: category)
-      subcategories[3].update!(read_restricted: true)
-
-      get "/categories/hierarchical_search.json"
+    it "returns the right categories when except param is present" do
+      get "/categories/hierarchical_search.json", params: { except: [category_child_1.id] }
 
       expect(response.status).to eq(200)
-      expect(response.parsed_body["categories"].length).to eq(7)
-      expect(response.parsed_body["categories"].map { |c| c["id"] }).to contain_exactly(
-        category.id,
-        subcategories[0].id,
-        subcategories[1].id,
-        subcategories[2].id,
-        subcategories[4].id,
-        subcategories[5].id,
-        SiteSetting.uncategorized_category_id,
+
+      expect(response.parsed_body["categories"].map { |c| c["id"] }).to eq(
+        [category.id, category_child_2.id],
       )
+    end
+
+    it "returns the right categories when only param is present" do
+      get "/categories/hierarchical_search.json", params: { only: [category_child_1.id] }
+
+      expect(response.status).to eq(200)
+
+      expect(response.parsed_body["categories"].map { |c| c["id"] }).to eq(
+        [category.id, category_child_1.id],
+      )
+    end
+
+    it "returns the right categories when page param is present" do
+      stub_const(CategoriesController, "MAX_CATEGORIES_LIMIT", 1) do
+        get "/categories/hierarchical_search.json", params: { page: 2 }
+
+        expect(response.status).to eq(200)
+
+        categories = response.parsed_body["categories"]
+
+        expect(categories.length).to eq(1)
+        expect(categories[0]["id"]).to eq(category_child_1.id)
+      end
     end
 
     it "doesn't produce categories with a very specific term" do

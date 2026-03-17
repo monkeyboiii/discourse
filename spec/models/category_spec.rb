@@ -87,6 +87,14 @@ RSpec.describe Category do
         ).count,
       ).to eq(0)
     end
+
+    it "destroys category_posting_review_groups when category is destroyed" do
+      category = Fabricate(:category, category_setting_attributes: { require_topic_approval: true })
+
+      expect { category.destroy! }.to change { category.category_posting_review_groups.count }.by(
+        -1,
+      )
+    end
   end
 
   describe "slug" do
@@ -903,24 +911,6 @@ RSpec.describe Category do
     end
   end
 
-  describe "require topic/post approval" do
-    fab!(:category, :category_with_definition)
-
-    it "delegates methods to category settings" do
-      expect(category).to delegate_method(:require_reply_approval).to(:category_setting)
-      expect(category).to delegate_method(:require_reply_approval=).with_arguments(true).to(
-        :category_setting,
-      )
-      expect(category).to delegate_method(:require_reply_approval?).to(:category_setting)
-
-      expect(category).to delegate_method(:require_topic_approval).to(:category_setting)
-      expect(category).to delegate_method(:require_topic_approval=).with_arguments(true).to(
-        :category_setting,
-      )
-      expect(category).to delegate_method(:require_topic_approval?).to(:category_setting)
-    end
-  end
-
   describe "auto bump" do
     it "should correctly automatically bump topics" do
       freeze_time
@@ -1532,21 +1522,6 @@ RSpec.describe Category do
     it "respects the relation it's called on" do
       expect(Category.where.not(id: category.id).ancestors_of([sub_subcategory.id]).to_a).to eq(
         [subcategory],
-      )
-    end
-  end
-
-  describe ".limited_categories_matching" do
-    before_all { SiteSetting.max_category_nesting = 3 }
-
-    fab!(:foo) { Fabricate(:category, name: "foo") }
-    fab!(:bar) { Fabricate(:category, name: "bar", parent_category: foo) }
-    fab!(:baz) { Fabricate(:category, name: "baz", parent_category: bar) }
-
-    it "produces results in depth-first pre-order" do
-      SiteSetting.max_category_nesting = 3
-      expect(Category.limited_categories_matching(nil, nil, nil, "baz").pluck(:name)).to eq(
-        %w[foo bar baz],
       )
     end
   end

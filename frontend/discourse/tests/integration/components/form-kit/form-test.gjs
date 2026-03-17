@@ -30,8 +30,8 @@ module("Integration | Component | FormKit | Form", function (hooks) {
           >Add</form.Button>
 
           <form.Collection @name="foo" as |collection|>
-            <collection.Field @name="bar" @title="Bar" as |field|>
-              <field.Input />
+            <collection.Field @type="input" @name="bar" @title="Bar" as |field|>
+              <field.Control />
             </collection.Field>
           </form.Collection>
         </Form>
@@ -57,8 +57,8 @@ module("Integration | Component | FormKit | Form", function (hooks) {
     await render(
       <template>
         <Form @data={{hash foo=1 bar=2}} @validate={{validate}} as |form|>
-          <form.Field @name="foo" @title="Foo" />
-          <form.Field @name="bar" @title="Bar" />
+          <form.Field @type="input" @name="foo" @title="Foo" />
+          <form.Field @type="input" @name="bar" @title="Bar" />
         </Form>
       </template>
     );
@@ -78,20 +78,22 @@ module("Integration | Component | FormKit | Form", function (hooks) {
       <template>
         <Form @data={{data}} as |form|>
           <form.Field
+            @type="input"
             @name="foo"
             @title="Foo"
             @validation="required"
             as |field|
           >
-            <field.Input />
+            <field.Control />
           </form.Field>
           <form.Field
+            @type="input"
             @name="bar"
             @title="Bar"
             @validation="required"
             as |field|
           >
-            <field.Input />
+            <field.Control />
           </form.Field>
           <form.Submit />
         </Form>
@@ -179,6 +181,32 @@ module("Integration | Component | FormKit | Form", function (hooks) {
     }, 0);
   });
 
+  test("@onRegisterApi - isDirty", async function (assert) {
+    let formApi;
+    const model = { foo: 1 };
+    const registerApi = (api) => (formApi = api);
+
+    await render(
+      <template>
+        <Form @data={{model}} @onRegisterApi={{registerApi}} as |form|>
+          <form.Field @type="input" @name="foo" @title="Foo" as |field|>
+            <field.Control />
+          </form.Field>
+        </Form>
+      </template>
+    );
+
+    assert.false(formApi.isDirty, "form is not dirty initially");
+
+    await formKit().field("foo").fillIn("2");
+
+    assert.true(formApi.isDirty, "form is dirty after a change");
+
+    await formApi.reset();
+
+    assert.false(formApi.isDirty, "form is not dirty after reset");
+  });
+
   test("@data", async function (assert) {
     await render(
       <template>
@@ -205,15 +233,16 @@ module("Integration | Component | FormKit | Form", function (hooks) {
       <template>
         <Form @data={{hash bar=1}} @onReset={{onReset}} as |form|>
           <form.Field
+            @type="input"
             @title="Foo"
             @name="foo"
             @validation="required"
             as |field|
           >
-            <field.Input />
+            <field.Control />
           </form.Field>
-          <form.Field @title="Bar" @name="bar" as |field|>
-            <field.Input />
+          <form.Field @type="input" @title="Bar" @name="bar" as |field|>
+            <field.Control />
           </form.Field>
           <form.Button class="set-bar" @action={{fn form.set "bar" 2}} />
         </Form>
@@ -239,8 +268,8 @@ module("Integration | Component | FormKit | Form", function (hooks) {
     await render(
       <template>
         <Form @data={{data}} as |form|>
-          <form.Field @name="foo" @title="Foo" as |field|>
-            <field.Input />
+          <form.Field @type="input" @name="foo" @title="Foo" as |field|>
+            <field.Control />
           </form.Field>
           <form.Button class="set-foo" @action={{fn form.set "foo" 2}} />
         </Form>
@@ -322,12 +351,13 @@ module("Integration | Component | FormKit | Form", function (hooks) {
         <Form @data={{hash visible=true}} as |form data|>
           {{#if data.visible}}
             <form.Field
+              @type="input"
               @title="Foo"
               @name="foo"
               @validation="required"
               as |field|
             >
-              <field.Input />
+              <field.Control />
             </form.Field>
           {{/if}}
 
@@ -370,5 +400,55 @@ module("Integration | Component | FormKit | Form", function (hooks) {
       document.querySelector("#ember-testing-container").scrollTop,
       0
     );
+  });
+
+  test("clicking error link focuses the field input", async function (assert) {
+    await render(
+      <template>
+        <Form as |form|>
+          <form.Field
+            @type="input"
+            @name="foo"
+            @title="Foo"
+            @validation="required"
+            as |field|
+          >
+            <field.Control />
+          </form.Field>
+          <form.Submit />
+        </Form>
+      </template>
+    );
+
+    await formKit().submit();
+
+    await click(".form-kit__errors-summary-list a");
+
+    assert.dom(document.activeElement).hasClass("form-kit__control-input");
+  });
+
+  test("error link has anchor href for fields without focusable elements", async function (assert) {
+    const validate = async (data, { addError }) => {
+      addError("foo", { title: "Foo", message: "error" });
+    };
+
+    await render(
+      <template>
+        <Form @validate={{validate}} as |form|>
+          <form.Field @name="foo" @type="custom" @title="Foo" as |field|>
+            <field.Control>
+              <div class="not-focusable">Custom content</div>
+            </field.Control>
+          </form.Field>
+          <form.Submit />
+        </Form>
+      </template>
+    );
+
+    await formKit().submit();
+
+    assert
+      .dom(".form-kit__errors-summary-list a")
+      .hasAttribute("href", "#control-foo");
   });
 });

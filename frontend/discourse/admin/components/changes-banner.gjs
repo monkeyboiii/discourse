@@ -1,7 +1,7 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import { modifier } from "ember-modifier";
 import DButton from "discourse/components/d-button";
 
@@ -38,12 +38,12 @@ export default class ChangesBanner extends Component {
 
   <template>
     <div class="admin-changes-banner" {{this.resizerModifier}}>
-      <span class="admin-changes-banner__main-label">{{htmlSafe
+      <span class="admin-changes-banner__main-label">{{trustHTML
           @bannerLabel
         }}</span>
       <div class="controls">
         <DButton
-          class="btn-secondary btn-small"
+          class="btn-default btn-secondary btn-small"
           @action={{@discard}}
           @disabled={{this.isSaving}}
           @translatedLabel={{@discardLabel}}

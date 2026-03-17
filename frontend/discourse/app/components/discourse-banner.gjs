@@ -2,12 +2,11 @@ import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import DButton from "discourse/components/d-button";
 import icon from "discourse/helpers/d-icon";
-import { bind } from "discourse/lib/decorators";
 import { i18n } from "discourse-i18n";
-import DecoratedHtml, { applyHtmlDecorators } from "./decorated-html";
+import DecoratedHtml from "./decorated-html";
 
 export default class DiscourseBanner extends Component {
   @service currentUser;
@@ -27,7 +26,7 @@ export default class DiscourseBanner extends Component {
     newDiv.querySelectorAll("[id^='heading--']").forEach((el) => {
       el.removeAttribute("id");
     });
-    return htmlSafe(newDiv.innerHTML);
+    return trustHTML(newDiv.innerHTML);
   }
 
   get visible() {
@@ -45,11 +44,6 @@ export default class DiscourseBanner extends Component {
     }
 
     return !this.hide && bannerKey && dismissedBannerKey !== bannerKey;
-  }
-
-  @bind
-  decorateContent(element, helper) {
-    applyHtmlDecorators(element, helper);
   }
 
   @action
@@ -78,7 +72,7 @@ export default class DiscourseBanner extends Component {
                 >
                   {{icon "pencil"}}
                   {{#if this.site.desktopView}}
-                    {{htmlSafe (i18n "banner.edit")}}
+                    {{trustHTML (i18n "banner.edit")}}
                   {{/if}}
                 </a>
               {{/if}}
@@ -87,15 +81,12 @@ export default class DiscourseBanner extends Component {
                 @action={{this.dismiss}}
                 @icon="xmark"
                 @title="banner.close"
+                @ariaLabel="banner.close"
                 class="btn-transparent close"
               />
             </div>
 
-            <DecoratedHtml
-              @html={{this.content}}
-              @decorate={{this.decorateContent}}
-              @id="banner-content"
-            />
+            <DecoratedHtml @html={{this.content}} @id="banner-content" />
           </div>
         </div>
       </div>

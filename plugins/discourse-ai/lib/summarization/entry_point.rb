@@ -4,15 +4,15 @@ module DiscourseAi
   module Summarization
     class EntryPoint
       def inject_into(plugin)
+        plugin.add_to_serializer(:current_user, :can_request_gists) { scope.can_request_gists? }
+
         plugin.add_to_serializer(:current_user, :can_summarize) do
           return false if !SiteSetting.ai_summarization_enabled
 
-          if (
-               ai_persona = AiPersona.find_by_id_from_cache(SiteSetting.ai_summarization_persona)
-             ).blank?
+          if (ai_agent = AiAgent.find_by_id_from_cache(SiteSetting.ai_summarization_agent)).blank?
             return false
           end
-          scope.user.in_any_groups?(ai_persona.allowed_group_ids.to_a)
+          scope.user.in_any_groups?(ai_agent.allowed_group_ids.to_a)
         end
 
         plugin.add_to_serializer(:topic_view, :summarizable) do
@@ -93,6 +93,25 @@ module DiscourseAi
           if SiteSetting.discourse_ai_enabled && SiteSetting.ai_summarization_enabled &&
                SiteSetting.ai_summary_gists_enabled && post.topic
             Jobs.enqueue(:fast_track_topic_gist, topic_id: post&.topic_id)
+          end
+        end
+
+        plugin.on(:posts_moved) do |args|
+          if SiteSetting.discourse_ai_enabled && SiteSetting.ai_summarization_enabled &&
+               !SiteSetting.ai_summary_backfill_maximum_topics_per_hour.zero?
+            topic_ids = [args[:original_topic_id], args[:destination_topic_id]].compact.uniq
+
+            # Mark existing summaries for regeneration by resetting highest_target_number
+            AiSummary.where(target_type: "Topic", target_id: topic_ids).update_all(
+              highest_target_number: 0,
+            )
+
+            # Fast-track gist regeneration since they appear in topic lists
+            if SiteSetting.ai_summary_gists_enabled
+              topic_ids.each do |topic_id|
+                Jobs.enqueue(:fast_track_topic_gist, topic_id: topic_id, force_regenerate: true)
+              end
+            end
           end
         end
       end

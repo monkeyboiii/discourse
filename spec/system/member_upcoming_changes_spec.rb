@@ -6,8 +6,6 @@ RSpec.describe "Member upcoming changes", type: :system do
   let(:upcoming_changes_page) { PageObjects::Pages::AdminUpcomingChanges.new }
 
   before do
-    SiteSetting.enable_upcoming_changes = true
-
     mock_upcoming_change_metadata(
       {
         enable_upload_debug_mode: {
@@ -26,6 +24,7 @@ RSpec.describe "Member upcoming changes", type: :system do
     )
 
     SiteSetting.enable_upload_debug_mode = true
+    SiteSetting.about_page_extra_groups_show_description = false
   end
 
   context "when user is logged in" do

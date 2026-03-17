@@ -36,11 +36,13 @@ zh_TW:
             canned_reply:
               label: "回覆"
     discourse_ai:
+      llm_selector:
+        none: "無"
       features:
         back: "上一步"
         disabled: "(停用)"
         groups: "群組:"
-        no_persona: "未設定"
+        no_agent: "未設定"
         no_groups: "無"
         edit: "設定"
         expand_list:
@@ -81,7 +83,7 @@ zh_TW:
         periods:
           last_day: "過去 24 小時"
           custom: "自訂..."
-      ai_persona:
+      ai_agent:
         back: "上一步"
         name: "名稱"
         edit: "編輯"
@@ -112,11 +114,21 @@ zh_TW:
         save: "儲存"
         remove_parameter: "移除"
         parameter_required: "必要設定"
+        credential_not_set: "(未設定)"
         edit: "編輯"
-        test: "執行測試"
+        test: "測試"
         delete: "刪除"
         test_modal:
           run: "執行測試"
+      secrets:
+        short_title: "憑證"
+        name: "名稱"
+        secret: "價值"
+        back: "上一步"
+        save: "儲存"
+        edit: "編輯"
+        delete: "刪除"
+        embedding: "嵌入"
       llms:
         display_name: "名稱"
         save: "儲存"

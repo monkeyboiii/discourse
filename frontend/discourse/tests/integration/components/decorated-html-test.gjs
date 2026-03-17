@@ -1,11 +1,13 @@
 import { tracked } from "@glimmer/tracking";
 import { getOwner } from "@ember/owner";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import { render, settled } from "@ember/test-helpers";
 import { hbs } from "ember-cli-htmlbars";
 import curryComponent from "ember-curry-component";
 import { module, test } from "qunit";
-import DecoratedHtml from "discourse/components/decorated-html";
+import DecoratedHtml, {
+  registerHtmlDecorator,
+} from "discourse/components/decorated-html";
 import { withSilencedDeprecations } from "discourse/lib/deprecated";
 import { setupRenderingTest } from "discourse/tests/helpers/component-test";
 import { WIDGET_DECOMMISSION_OPTIONS } from "discourse/widgets/widget";
@@ -15,14 +17,14 @@ module("Integration | Component | <DecoratedHtml />", function (hooks) {
 
   test("renders and re-renders content", async function (assert) {
     const state = new (class {
-      @tracked html = htmlSafe("<h1>Initial</h1>");
+      @tracked html = trustHTML("<h1>Initial</h1>");
     })();
 
     await render(<template><DecoratedHtml @html={{state.html}} /></template>);
 
     assert.dom("h1").hasText("Initial");
 
-    state.html = htmlSafe("<h1>Updated</h1>");
+    state.html = trustHTML("<h1>Updated</h1>");
     await settled();
 
     assert.dom("h1").hasText("Updated");
@@ -30,7 +32,7 @@ module("Integration | Component | <DecoratedHtml />", function (hooks) {
 
   test("can decorate content, including renderGlimmer", async function (assert) {
     const state = new (class {
-      @tracked html = htmlSafe("<h1>Initial</h1>");
+      @tracked html = trustHTML("<h1>Initial</h1>");
     })();
 
     const decorate = (element, helper) => {
@@ -56,7 +58,7 @@ module("Integration | Component | <DecoratedHtml />", function (hooks) {
 
   test("can decorate content with renderGlimmer using a curried component", async function (assert) {
     const state = new (class {
-      @tracked html = htmlSafe("<h1>Initial</h1>");
+      @tracked html = trustHTML("<h1>Initial</h1>");
     })();
 
     const decorate = (element, helper) => {
@@ -86,7 +88,7 @@ module("Integration | Component | <DecoratedHtml />", function (hooks) {
 
   test("renderGlimmer is ignored if receives invalid arguments", async function (assert) {
     const state = new (class {
-      @tracked html = htmlSafe("<h1>Initial</h1>");
+      @tracked html = trustHTML("<h1>Initial</h1>");
     })();
 
     const decorateWithStringTarget = (element, helper) => {
@@ -166,5 +168,51 @@ module("Integration | Component | <DecoratedHtml />", function (hooks) {
       .doesNotExist(
         "Glimmer component is not rendered when a template is passed as the component"
       );
+  });
+
+  test("applies registered HTML decorators by default", async function (assert) {
+    let decoratorCalled = false;
+    registerHtmlDecorator((element) => {
+      decoratorCalled = true;
+      element.innerHTML += "<span id='auto-decorated'>Decorated</span>";
+    });
+
+    await render(
+      <template>
+        <DecoratedHtml @html={{trustHTML "<div>Content</div>"}} />
+      </template>
+    );
+
+    assert.true(decoratorCalled, "registered decorator was called");
+    assert.dom("#auto-decorated").hasText("Decorated");
+  });
+
+  test("custom @decorate function replaces default decoration", async function (assert) {
+    let registeredDecoratorCalled = false;
+    registerHtmlDecorator(() => {
+      registeredDecoratorCalled = true;
+    });
+
+    let customDecoratorCalled = false;
+    const customDecorator = (element) => {
+      customDecoratorCalled = true;
+      element.innerHTML += "<span id='custom'>Custom</span>";
+    };
+
+    await render(
+      <template>
+        <DecoratedHtml
+          @html={{trustHTML "<div>Content</div>"}}
+          @decorate={{customDecorator}}
+        />
+      </template>
+    );
+
+    assert.true(customDecoratorCalled, "custom decorator was called");
+    assert.false(
+      registeredDecoratorCalled,
+      "registered decorator was not called when custom decorator is provided"
+    );
+    assert.dom("#custom").hasText("Custom");
   });
 });

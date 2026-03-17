@@ -19,12 +19,14 @@ class LlmModel < ActiveRecord::Base
   has_one :llm_credit_allocation, dependent: :destroy
   has_many :llm_feature_credit_costs, dependent: :destroy
   belongs_to :user
+  belongs_to :ai_secret, optional: true
 
   validates :display_name, presence: true, length: { maximum: 100 }
   validates :tokenizer, presence: true, inclusion: DiscourseAi::Completions::Llm.tokenizer_names
   validates :provider, presence: true, inclusion: DiscourseAi::Completions::Llm.provider_names
   validates :url, presence: true, unless: -> { provider == BEDROCK_PROVIDER_NAME }
-  validates :name, :api_key, presence: true
+  validates :name, presence: true
+  validate :api_key_or_secret_present
   validates :max_prompt_tokens, numericality: { greater_than: 0 }
   validates :input_cost,
             :cached_input_cost,
@@ -51,66 +53,113 @@ class LlmModel < ActiveRecord::Base
   end
 
   def self.provider_params
-    {
+    params = {
       aws_bedrock: {
-        access_key_id: :text,
+        access_key_id: :secret,
         role_arn: :text,
         region: :text,
-        disable_native_tools: :checkbox,
-        disable_temperature: :checkbox,
-        disable_top_p: :checkbox,
         enable_reasoning: :checkbox,
-        reasoning_tokens: :number,
-        prompt_caching: {
-          type: :enum,
-          values: %w[never tool_results always],
-          default: "never",
+        adaptive_thinking: {
+          type: :checkbox,
+          depends_on: :enable_reasoning,
+        },
+        reasoning_tokens: {
+          type: :number,
+          depends_on: :enable_reasoning,
+          hidden_if: :adaptive_thinking,
         },
         effort: {
           type: :enum,
-          values: %w[default low medium high],
+          values: %w[default low medium high max],
           default: "default",
+        },
+        disable_native_tools: :checkbox,
+        disable_native_structured_output: :checkbox,
+        disable_temperature: {
+          type: :checkbox,
+          hidden_if: %i[enable_reasoning adaptive_thinking],
+        },
+        disable_top_p: {
+          type: :checkbox,
+          hidden_if: %i[enable_reasoning adaptive_thinking],
+        },
+        prompt_caching: {
+          type: :enum,
+          values: %w[never tool_results always],
+          default: "tool_results",
         },
       },
       anthropic: {
-        disable_native_tools: :checkbox,
-        disable_temperature: :checkbox,
-        disable_top_p: :checkbox,
         enable_reasoning: :checkbox,
-        reasoning_tokens: :number,
-        prompt_caching: {
-          type: :enum,
-          values: %w[never tool_results always],
-          default: "never",
+        adaptive_thinking: {
+          type: :checkbox,
+          depends_on: :enable_reasoning,
+        },
+        reasoning_tokens: {
+          type: :number,
+          depends_on: :enable_reasoning,
+          hidden_if: :adaptive_thinking,
         },
         effort: {
           type: :enum,
-          values: %w[default low medium high],
+          values: %w[default low medium high max],
           default: "default",
+        },
+        disable_native_tools: :checkbox,
+        disable_native_structured_output: :checkbox,
+        disable_temperature: {
+          type: :checkbox,
+          hidden_if: %i[enable_reasoning adaptive_thinking],
+        },
+        disable_top_p: {
+          type: :checkbox,
+          hidden_if: %i[enable_reasoning adaptive_thinking],
+        },
+        prompt_caching: {
+          type: :enum,
+          values: %w[never tool_results always],
+          default: "tool_results",
         },
       },
       open_ai: {
         organization: :text,
         disable_native_tools: :checkbox,
-        disable_temperature: :checkbox,
-        disable_top_p: :checkbox,
-        disable_streaming: :checkbox,
         reasoning_effort: {
           type: :enum,
-          values: %w[default minimal low medium high],
+          values: %w[default none minimal low medium high xhigh],
+          default: "default",
+        },
+        disable_temperature: {
+          type: :checkbox,
+          hidden_if: :reasoning_effort,
+        },
+        disable_top_p: {
+          type: :checkbox,
+          hidden_if: :reasoning_effort,
+        },
+        disable_streaming: :checkbox,
+        service_tier: {
+          type: :enum,
+          values: %w[default auto flex priority],
           default: "default",
         },
       },
       groq: {
         disable_native_tools: :checkbox,
-        disable_temperature: :checkbox,
-        disable_top_p: :checkbox,
-        disable_streaming: :checkbox,
         reasoning_effort: {
           type: :enum,
-          values: %w[default minimal low medium high],
+          values: %w[default none minimal low medium high xhigh],
           default: "default",
         },
+        disable_temperature: {
+          type: :checkbox,
+          hidden_if: :reasoning_effort,
+        },
+        disable_top_p: {
+          type: :checkbox,
+          hidden_if: :reasoning_effort,
+        },
+        disable_streaming: :checkbox,
       },
       mistral: {
         disable_native_tools: :checkbox,
@@ -118,20 +167,44 @@ class LlmModel < ActiveRecord::Base
       google: {
         disable_native_tools: :checkbox,
         enable_thinking: :checkbox,
-        disable_temperature: :checkbox,
+        thinking_level: {
+          type: :enum,
+          values: %w[default minimal low medium high],
+          default: "default",
+          depends_on: :enable_thinking,
+        },
+        thinking_tokens: {
+          type: :number,
+          depends_on: :enable_thinking,
+          hidden_if: :thinking_level,
+        },
+        disable_temperature: {
+          type: :checkbox,
+          hidden_if: :enable_thinking,
+        },
         disable_top_p: :checkbox,
-        thinking_tokens: :number,
       },
       azure: {
         disable_native_tools: :checkbox,
         reasoning_effort: {
           type: :enum,
-          values: %w[default minimal low medium high xhigh],
+          values: %w[default none minimal low medium high xhigh],
           default: "default",
         },
-        disable_temperature: :checkbox,
-        disable_top_p: :checkbox,
+        disable_temperature: {
+          type: :checkbox,
+          hidden_if: :reasoning_effort,
+        },
+        disable_top_p: {
+          type: :checkbox,
+          hidden_if: :reasoning_effort,
+        },
         disable_streaming: :checkbox,
+        service_tier: {
+          type: :enum,
+          values: %w[default auto flex priority],
+          default: "default",
+        },
       },
       hugging_face: {
         disable_system_prompt: :checkbox,
@@ -140,6 +213,21 @@ class LlmModel < ActiveRecord::Base
       vllm: {
         disable_system_prompt: :checkbox,
         disable_native_tools: :checkbox,
+        enable_thinking: :checkbox,
+        reasoning_effort: {
+          type: :enum,
+          values: %w[default none minimal low medium high xhigh],
+          default: "default",
+        },
+        disable_temperature: {
+          type: :checkbox,
+          hidden_if: :reasoning_effort,
+        },
+        disable_top_p: {
+          type: :checkbox,
+          hidden_if: :reasoning_effort,
+        },
+        disable_streaming: :checkbox,
       },
       ollama: {
         disable_system_prompt: :checkbox,
@@ -155,6 +243,15 @@ class LlmModel < ActiveRecord::Base
         disable_top_p: :checkbox,
       },
     }
+
+    unless SiteSetting.ai_llm_temperature_top_p_enabled
+      params.each_value do |provider_config|
+        provider_config.delete(:disable_temperature)
+        provider_config.delete(:disable_top_p)
+      end
+    end
+
+    params
   end
 
   def to_llm
@@ -233,7 +330,24 @@ class LlmModel < ActiveRecord::Base
   end
 
   def lookup_custom_param(key)
-    provider_params&.dig(key)
+    value = provider_params&.dig(key)
+    return value if value.nil?
+
+    param_def = self.class.provider_params.dig(provider&.to_sym, key.to_sym)
+
+    if param_def.is_a?(Hash) && param_def[:depends_on]
+      deps = Array(param_def[:depends_on])
+      return nil if deps.any? { |dep| !param_active?(dep) }
+    end
+
+    if param_def == :secret || (param_def.is_a?(Hash) && param_def[:type] == :secret)
+      if value.to_s =~ /\A\d+\z/
+        resolved = AiSecret.find_by(id: value.to_i)
+        return resolved&.secret if resolved
+      end
+    end
+
+    value
   end
 
   def seeded?
@@ -244,6 +358,8 @@ class LlmModel < ActiveRecord::Base
     if seeded?
       env_key = "DISCOURSE_AI_SEEDED_LLM_API_KEY_#{id.abs}"
       ENV[env_key] || self[:api_key]
+    elsif ai_secret.present?
+      ai_secret.secret
     else
       self[:api_key]
     end
@@ -279,6 +395,24 @@ class LlmModel < ActiveRecord::Base
   end
 
   private
+
+  def param_active?(key)
+    val = provider_params&.dig(key.to_s)
+    return false if val.nil? || val == false || val == "false" || val == "default" || val == ""
+    true
+  end
+
+  def api_key_or_secret_present
+    return if seeded?
+    if ai_secret_id.present?
+      unless AiSecret.exists?(ai_secret_id)
+        errors.add(:ai_secret_id, I18n.t("discourse_ai.llm_models.secret_not_found"))
+      end
+      return
+    end
+    return if self[:api_key].present?
+    errors.add(:base, I18n.t("discourse_ai.llm_models.secret_required"))
+  end
 
   def required_provider_params
     return if provider != BEDROCK_PROVIDER_NAME
@@ -317,5 +451,10 @@ end
 #  vision_enabled           :boolean          default(FALSE), not null
 #  created_at               :datetime         not null
 #  updated_at               :datetime         not null
+#  ai_secret_id             :bigint
 #  user_id                  :integer
+#
+# Indexes
+#
+#  index_llm_models_on_ai_secret_id  (ai_secret_id)
 #

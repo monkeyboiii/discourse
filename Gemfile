@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-ruby "~> 3.3"
+ruby "~> 3.4"
 
 source "https://rubygems.org"
 # if there is a super emergency and rubygems is playing up, try
@@ -53,6 +53,7 @@ gem "http_accept_language", require: false
 
 gem "discourse-fonts", require: "discourse_fonts"
 gem "discourse-emojis", require: "discourse_emojis"
+gem "discourse_math_bundle"
 
 gem "message_bus"
 
@@ -63,7 +64,7 @@ gem "fastimage"
 gem "aws-sdk-s3", require: false
 gem "aws-sdk-sns", require: false
 gem "aws-sdk-mediaconvert", require: false
-gem "excon", require: false
+gem "excon"
 gem "unf", require: false
 
 gem "email_reply_trimmer"
@@ -96,7 +97,7 @@ gem "rake"
 gem "thor", require: false
 gem "diffy", require: false
 gem "rinku"
-gem "sidekiq"
+gem "sidekiq", ">= 7.3.10" # ensuring it won't get downgraded to accomodate a connection_pool upgrade
 gem "mini_scheduler"
 
 gem "mini_racer"
@@ -113,7 +114,6 @@ gem "addressable"
 gem "json_schemer"
 
 gem "net-smtp", require: false
-gem "net-imap", require: false
 gem "net-pop", require: false
 gem "digest", require: false
 
@@ -142,7 +142,6 @@ group :test, :development do
 
   gem "shoulda-matchers", require: false
   gem "rspec-html-matchers"
-  gem "pry-stack_explorer", require: false
   gem "debug", ">= 1.0.0", require: "debug/prelude"
   gem "rubocop-discourse", require: false
   gem "parallel_tests"
@@ -160,7 +159,6 @@ group :development do
   gem "ruby-prof", require: false, platform: :mri
   gem "bullet", require: !!ENV["BULLET"]
   gem "better_errors", platform: :mri, require: !!ENV["BETTER_ERRORS"]
-  gem "binding_of_caller"
   gem "yaml-lint"
   gem "yard"
   gem "ruby-lsp", require: false
@@ -290,6 +288,7 @@ end
 gem "dry-initializer", "~> 3.1"
 
 gem "parallel"
+gem "tty-prompt", require: false
 
 # for discourse-zendesk-plugin
 gem "inflection", require: false

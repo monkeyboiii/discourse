@@ -14,6 +14,7 @@ import FKCheckboxGroup from "discourse/form-kit/components/fk/checkbox-group";
 import FKCollection from "discourse/form-kit/components/fk/collection";
 import FKContainer from "discourse/form-kit/components/fk/container";
 import FKControlConditionalContent from "discourse/form-kit/components/fk/control/conditional-content";
+import FKEmphasis from "discourse/form-kit/components/fk/emphasis";
 import FKErrorsSummary from "discourse/form-kit/components/fk/errors-summary";
 import FKField from "discourse/form-kit/components/fk/field";
 import FKFieldset from "discourse/form-kit/components/fk/fieldset";
@@ -42,6 +43,7 @@ class FKForm extends Component {
   constructor() {
     super(...arguments);
 
+    const instance = this;
     this.args.onRegisterApi?.({
       set: this.set,
       setProperties: this.setProperties,
@@ -50,6 +52,10 @@ class FKForm extends Component {
       reset: this.onReset,
       addError: this.addError,
       removeError: this.removeError,
+      removeErrors: this.removeErrors,
+      get isDirty() {
+        return instance.formData.isDirty;
+      },
     });
 
     this.router.on("routeWillChange", this.checkIsDirty);
@@ -65,10 +71,14 @@ class FKForm extends Component {
   async checkIsDirty(transition) {
     let triggerConfirm = false;
 
+    // In some cases (e.g., subroute -> parent),
+    // queryParamsOnly is true even though the route name changes
+    const routeChanging = transition.to?.name !== transition.from?.name;
+
     const shouldCheck =
       this.formData.isDirty &&
       !transition.isAborted &&
-      !transition.queryParamsOnly;
+      (!transition.queryParamsOnly || routeChanging);
 
     if (this.args.onDirtyCheck) {
       triggerConfirm = shouldCheck && this.args.onDirtyCheck(transition);
@@ -135,6 +145,11 @@ class FKForm extends Component {
   @action
   removeError(name) {
     this.formData.removeError(name);
+  }
+
+  @action
+  removeErrors() {
+    this.formData.removeErrors();
   }
 
   @action
@@ -306,6 +321,7 @@ class FKForm extends Component {
         (hash
           Row=Row
           Section=FKSection
+          Emphasis=FKEmphasis
           Fieldset=FKFieldset
           ConditionalContent=(component FKControlConditionalContent)
           Container=FKContainer

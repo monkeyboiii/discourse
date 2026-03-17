@@ -36,6 +36,8 @@ gl:
             canned_reply:
               label: "Responder"
     discourse_ai:
+      llm_selector:
+        none: "Ningunha"
       features:
         back: "Volver"
         disabled: "(desactivado)"
@@ -82,7 +84,7 @@ gl:
         total: "Total"
         periods:
           custom: "Personalizar..."
-      ai_persona:
+      ai_agent:
         back: "Volver"
         name: "Nome"
         edit: "Editar"
@@ -115,7 +117,17 @@ gl:
         remove_parameter: "Retirar"
         parameter_required: "Obrigatorio"
         edit: "Editar"
+        test: "Proba"
         delete: "Eliminar"
+      secrets:
+        short_title: "Acreditacións"
+        name: "Nome"
+        secret: "Valor"
+        back: "Volver"
+        save: "Gardar"
+        edit: "Editar"
+        delete: "Eliminar"
+        embedding: "Incorporando"
       llms:
         display_name: "Nome"
         provider: "Fornecedor"

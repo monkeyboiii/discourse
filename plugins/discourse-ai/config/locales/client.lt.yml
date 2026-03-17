@@ -12,8 +12,6 @@ lt:
           descriptions:
             discourse_ai:
               search: "Leidžia dirbtinio intelekto paiešką"
-              stream_completion: "Leidžia transliuoti dirbtinio intelekto personažų užbaigimus"
-              update_personas: "Leidžia atnaujinti dirbtinio intelekto personas"
       site_settings:
         categories:
           discourse_ai: "Discourse AI"
@@ -35,9 +33,6 @@ lt:
             create_ai_llm_model: "Sukurkite LLM modelį"
             update_ai_llm_model: "Atnaujinti LLM modelį"
             delete_ai_llm_model: "Ištrinti LLM modelį"
-            create_ai_persona: "Sukurkite AI personažą"
-            update_ai_persona: "Atnaujinti dirbtinio intelekto personažą"
-            delete_ai_persona: "Ištrinti dirbtinio intelekto personažą"
             create_ai_tool: "Sukurkite dirbtinio intelekto įrankį"
             update_ai_tool: "Atnaujinti dirbtinio intelekto įrankį"
             delete_ai_tool: "Ištrinti dirbtinio intelekto įrankį"
@@ -110,24 +105,16 @@ lt:
             top_p:
               label: "Viršutinė P"
               description: "Viršutinė P, naudojama LLM, padidinkite, kad padidėtų atsitiktinumas (palikite tuščią, jei norite naudoti numatytuosius modelio parametrus)"
-            persona_id:
-              label: "Persona"
-        llm_tool_triage:
+        ai_tool_action:
           fields:
-            model:
-              label: "Modelis"
-              description: "Numatytasis kalbos modelis, naudojamas triažui"
             tool:
-              label: "Įrankis"
-              description: "Įrankis, naudojamas triažui (įrankis negali turėti apibrėžtų parametrų)"
-        llm_persona_triage:
-          fields:
-            persona:
-              label: "Persona"
+              label: "Dirbtinio intelekto įrankis"
+              description: "Dirbtinio intelekto įrankis, kuris vykdomas, kai suveikia automatizavimas"
+            llm_model:
+              label: "LLM modelis"
+              description: "Kalbos modelis įrankiams, kurie naudoja llm.generate() (neprivaloma)"
         llm_triage:
           fields:
-            triage_persona:
-              label: "Persona"
             search_for_text:
               label: "Ieškokite teksto"
             category:
@@ -145,8 +132,11 @@ lt:
               label: "Slėpti temą"
     discourse_ai:
       title: "AI"
+      llm_selector:
+        none: "Nieko"
       features:
         back: "Atgal"
+        settings_save_error: "Kai kurių nustatymų išsaugoti nepavyko."
         disabled: "(uždrausta)"
         groups: "Grupės:"
         no_groups: "Nieko"
@@ -157,14 +147,40 @@ lt:
           many: "(%{count}daugiau)"
           other: "(%{count} daugiau)"
         collapse_list: "(rodyti mažiau)"
+        bot:
+          setting_groups:
+            settings: "Pagrindiniai nustatymai"
+            access_control: "Prieigos kontrolė"
+            ui_settings: "Vartotojo sąsajos nustatymai"
+            integrations: "Integracijos"
         filters:
           all: "Visi"
           reset: "Atstatyti"
+        summarization:
+          setting_groups:
+            settings: "Pagrindiniai nustatymai"
+            gists: "Gistai"
+            backfill: "Užpildymas"
         search:
           name: "Paieška"
+          setting_groups:
+            settings: "Pagrindiniai nustatymai"
+        embeddings:
+          setting_groups:
+            model_settings: "Modelio nustatymai"
+            related_topics: "Susijusios temos"
+            semantic_search: "Semantinė paieška"
+        discord:
+          setting_groups:
+            settings: "Pagrindiniai nustatymai"
+            discord_configuration: "Nesantaikos konfigūracija"
         inference:
           match_concepts: "Sąvokų atitikimas"
           deduplicate_concepts: "Sąvokų deduplikacija"
+          setting_groups:
+            settings: "Pagrindiniai nustatymai"
+            topic_criteria: "Temos kriterijai"
+            post_criteria: "Įrašo kriterijai"
         ai_helper:
           name: "Padėjėjas"
           description: "Padeda vartotojams bendrauti bendruomenėje, pavyzdžiui, kurti temas, rašyti įrašus ir skaityti turinį"
@@ -177,6 +193,10 @@ lt:
           markdown_tables: "Sukurti Markdown lentelę"
           custom_prompt: "Pasirinktinis raginimas"
           image_caption: "Antraštės vaizdai"
+          setting_groups:
+            access_permissions: "Prieiga ir leidimai"
+            enabled_features: "Įjungtos funkcijos"
+            automation: "Automatizavimas"
         translation:
           name: "Vertimai"
           description: "Verčia turinį į palaikomas kalbas"
@@ -184,6 +204,9 @@ lt:
           post_raw_translator: "Neapdoroto įrašo vertėjas"
           topic_title_translator: "Temos pavadinimo vertėjas"
           short_text_translator: "Trumpų tekstų vertėjas"
+          setting_groups:
+            settings: "Pagrindiniai nustatymai"
+            backfill_and_limits: "Užpildymas ir apribojimai"
         spam:
           name: "Šlamštas"
           description: "Naudodamas pasirinktą LLM, identifikuoja galimą šlamštą ir pažymi jį svetainės moderatoriams, kad jie galėtų jį patikrinti peržiūros eilėje."
@@ -221,7 +244,6 @@ lt:
         short_title: "Šlamštas"
         title: "Šlamšto tvarkymo konfigūravimas"
         select_llm: "Pasirinkite teisės magistro laipsnį (LLM)"
-        select_persona: "Pasirinkite asmenį"
         custom_instructions: "Individualūs nurodymai"
         custom_instructions_help: "Jūsų svetainei pritaikytos instrukcijos, padedančios dirbtiniam intelektui atpažinti šlamštą, pvz., „Aktyviau nuskaitykite įrašus ne anglų kalba“."
         last_seven_days: "Paskutinės 7 dienos"
@@ -254,7 +276,7 @@ lt:
         periods:
           last_day: "Paskutinės 24 valandos"
           custom: "Pasirinktinis..."
-      ai_persona:
+      ai_agent:
         back: "Atgal"
         name: "Vardas"
         edit: "Redaguoti"
@@ -288,7 +310,18 @@ lt:
         remove_parameter: "Pašalinti"
         parameter_required: "Privalomi"
         edit: "Redaguoti"
+        test: "Bandymas"
         delete: "Pašalinti"
+      secrets:
+        short_title: "Įgaliojimai"
+        name: "Vardas"
+        secret: "Reikšmė"
+        back: "Atgal"
+        save: "Saugoti"
+        edit: "Redaguoti"
+        delete: "Pašalinti"
+        embedding: "Įterpimai"
+        tool: "Įrankis"
       llms:
         display_name: "Vardas"
         save: "Saugoti"
@@ -339,6 +372,9 @@ lt:
           generating: "Generuojama antraštė..."
           credits: "Antraštė teikiama AI"
           save_caption: "Saugoti"
+      reviewables:
+        ai_tool_action:
+          tool: "Įrankis"
       embeddings:
         back: "Atgal"
         save: "Saugoti"
@@ -351,7 +387,6 @@ lt:
           google: "Google"
           fake: "Išskirtinės"
       ai_bot:
-        persona: "Persona"
         llm: "Modelis"
         debug_ai_modal:
           request: "Užklausa"
@@ -388,3 +423,7 @@ lt:
         tooltip:
           actions:
             disable: "Išjungti"
+    review:
+      types:
+        reviewable_ai_tool_action:
+          title: "DI įrankio veiksmas"

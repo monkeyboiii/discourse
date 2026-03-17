@@ -3,17 +3,14 @@ import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
 import { service } from "@ember/service";
-import { htmlSafe } from "@ember/template";
+import { trustHTML } from "@ember/template";
 import DButton from "discourse/components/d-button";
-import DecoratedHtml, {
-  applyHtmlDecorators,
-} from "discourse/components/decorated-html";
+import DecoratedHtml from "discourse/components/decorated-html";
 import ExpandPost from "discourse/components/expand-post";
 import PostListItemDetails from "discourse/components/post-list/item/details";
 import avatar from "discourse/helpers/avatar";
 import concatClass from "discourse/helpers/concat-class";
 import icon from "discourse/helpers/d-icon";
-import { bind } from "discourse/lib/decorators";
 import { userPath } from "discourse/lib/url";
 import { or } from "discourse/truth-helpers";
 
@@ -103,11 +100,6 @@ export default class PostListItem extends Component {
     }
   }
 
-  @bind
-  decoratePostContent(element, helper) {
-    applyHtmlDecorators(element, helper);
-  }
-
   <template>
     <div class={{this.itemClasses}}>
       {{yield to="abovePostItemHeader"}}
@@ -189,8 +181,7 @@ export default class PostListItem extends Component {
         class="excerpt"
       >
         <DecoratedHtml
-          @html={{htmlSafe (or @post.expandedExcerpt @post.excerpt)}}
-          @decorate={{this.decoratePostContent}}
+          @html={{trustHTML (or @post.expandedExcerpt @post.excerpt)}}
           @className="cooked"
         />
       </div>

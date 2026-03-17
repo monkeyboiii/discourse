@@ -43,8 +43,6 @@ module DiscourseAi
           @llm_model = llm_model
         end
 
-        VALID_ID_REGEX = /\A[a-zA-Z0-9_]+\z/
-
         def native_tool_support?
           false
         end
@@ -201,6 +199,8 @@ module DiscourseAi
         end
 
         def trim_messages(messages)
+          return messages if prompt.skip_trim
+
           prompt_limit = max_prompt_tokens
           current_token_count = 0
           message_step_size = (prompt_limit / 25).to_i * -1

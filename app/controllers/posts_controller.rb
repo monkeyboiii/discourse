@@ -35,28 +35,9 @@ class PostsController < ApplicationController
   end
 
   def markdown_num
-    if params[:revision].present?
-      post_revision = find_post_revision_from_topic_id
-      render plain: post_revision.modifications[:raw].last
-    elsif params[:post_number].present?
-      markdown Post.find_by(
-                 topic_id: params[:topic_id].to_i,
-                 post_number: params[:post_number].to_i,
-               )
-    else
-      opts = params.slice(:page)
-      opts[:limit] = MARKDOWN_TOPIC_PAGE_SIZE
-      topic_view = TopicView.new(params[:topic_id], current_user, opts)
-      content = topic_view.posts.map { |p| <<~MD }
-          #{p.user.username} | #{p.updated_at} | ##{p.post_number}
-
-          #{p.raw}
-
-          -------------------------
-
-        MD
-      render plain: content.join
-    end
+    return render plain: markdown_for_revision if params[:revision].present?
+    return markdown_for_post if params[:post_number].present?
+    render plain: markdown_for_topic
   end
 
   def latest
@@ -279,6 +260,14 @@ class PostsController < ApplicationController
       opts[:skip_validations] = true
     end
 
+    if params.key?(:bypass_bump) || params[:post]&.key?(:bypass_bump)
+      if guardian.can_update_bumped_at?
+        opts[:bypass_bump] = ActiveModel::Type::Boolean.new.cast(
+          params[:bypass_bump].presence || params.dig(:post, :bypass_bump),
+        )
+      end
+    end
+
     topic = post.topic
     topic = Topic.with_deleted.find(post.topic_id) if guardian.is_staff?
 
@@ -416,8 +405,7 @@ class PostsController < ApplicationController
     posts = Post.where(id: post_ids_including_replies).order(:id)
     raise Discourse::InvalidParameters.new(:post_ids) if posts.blank?
 
-    # Make sure we can delete the posts
-    posts.each { |p| guardian.ensure_can_delete!(p) }
+    posts.each { |p| guardian.ensure_can_delete_post_or_topic!(p) }
 
     Post.transaction do
       posts.each_with_index do |p, i|
@@ -482,20 +470,24 @@ class PostsController < ApplicationController
     post = find_post_from_params
     raise Discourse::NotFound if post.hidden && !guardian.can_view_hidden_post_revisions?
 
-    post_revision = find_post_revision_from_params
-    post_revision_serializer =
-      PostRevisionSerializer.new(post_revision, scope: guardian, root: false)
-    render_json_dump(post_revision_serializer)
+    render_json_dump(
+      PostRevisionSerializer.new(find_post_revision_from_params, scope: guardian, root: false),
+    )
   end
 
   def latest_revision
     post = find_post_from_params
     raise Discourse::NotFound if post.hidden && !guardian.can_view_hidden_post_revisions?
 
-    post_revision = find_latest_post_revision_from_params
-    post_revision_serializer =
-      PostRevisionSerializer.new(post_revision, scope: guardian, root: false)
-    render_json_dump(post_revision_serializer)
+    render_json_dump(
+      PostRevisionSerializer.new(
+        find_latest_post_revision_from_params,
+        scope: guardian,
+        root: false,
+      ),
+    )
+  rescue ONPDiff::DiffLimitExceeded
+    render_json_error(I18n.t("errors.diff_too_complex"), status: 422)
   end
 
   def hide_revision
@@ -828,6 +820,33 @@ class PostsController < ApplicationController
 
   private
 
+  def markdown_for_revision
+    find_post_revision_from_topic_id.modifications[:raw].last
+  end
+
+  def markdown_for_post
+    post = Post.find_by(topic_id: params[:topic_id].to_i, post_number: params[:post_number].to_i)
+    markdown(post)
+  end
+
+  def markdown_for_topic
+    topic_view =
+      TopicView.new(
+        params[:topic_id],
+        current_user,
+        page: params[:page],
+        limit: MARKDOWN_TOPIC_PAGE_SIZE,
+      )
+    topic_view.posts.select { |post| guardian.can_see?(post) }.map { |post| <<~MD }.join
+        #{post.user.username} | #{post.updated_at} | ##{post.post_number}
+
+        #{post.raw}
+
+        -------------------------
+
+      MD
+  end
+
   def user_posts(guardian, user_id, opts)
     # Topic.unscoped is necessary to remove the default deleted_at: nil scope
     posts =
@@ -930,23 +949,23 @@ class PostsController < ApplicationController
     # Staff are allowed to pass `is_warning`
     if current_user.staff?
       params.permit(:is_warning)
-      result[:is_warning] = (params[:is_warning] == "true")
+      result[:is_warning] = ActiveModel::Type::Boolean.new.cast(params[:is_warning])
     else
       result[:is_warning] = false
     end
 
-    if params[:no_bump] == "true"
+    if ActiveModel::Type::Boolean.new.cast(params[:no_bump])
       raise Discourse::InvalidParameters.new(:no_bump) unless guardian.can_skip_bump?
       result[:no_bump] = true
     end
 
-    if params[:shared_draft] == "true"
+    if ActiveModel::Type::Boolean.new.cast(params[:shared_draft])
       raise Discourse::InvalidParameters.new(:shared_draft) unless guardian.can_create_shared_draft?
 
       result[:shared_draft] = true
     end
 
-    if params[:whisper] == "true"
+    if ActiveModel::Type::Boolean.new.cast(params[:whisper])
       unless guardian.can_create_whisper?
         raise Discourse::InvalidAccess.new(
                 "invalid_whisper_access",
@@ -961,6 +980,14 @@ class PostsController < ApplicationController
     PostRevisor.tracked_topic_fields.each_key do |f|
       params.permit(f => [])
       result[f] = params[f] if params.has_key?(f)
+    end
+
+    if result[:tags].present? && result[:tags].first.is_a?(String)
+      Discourse.deprecate(
+        "Passing tag names as strings to the tags param is deprecated, use tag objects ({id, name}) instead",
+        since: "2026.01",
+        drop_from: "2026.07",
+      )
     end
 
     # Stuff we can use in spam prevention plugins
