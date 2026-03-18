@@ -1,3 +1,6 @@
 [submodule "plugins/discourse-logto-mobile-session"]
 	path = plugins/discourse-logto-mobile-session
 	url = https://github.com/monkeyboiii/discourse-logto-mobile-session
+[submodule "plugins/discourse-fcm-notifications"]
+	path = plugins/discourse-fcm-notifications
+	url = git@github.com:monkeyboiii/discourse-fcm-notifications.git
