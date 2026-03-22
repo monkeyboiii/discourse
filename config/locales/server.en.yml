@@ -1247,6 +1247,9 @@ en:
       every_month: "every month"
       every_six_months: "every six months"
 
+  calendar_subscriptions:
+    application_name: "Calendar Subscriptions"
+
   user_api_key:
     title: 'Authorize "%{application_name}"'
     authorize: "Authorize"
@@ -3355,7 +3358,7 @@ en:
 
       - Update using our easy **[one-click browser update](%{base_url}/admin/update)**
 
-      - See what's new in the [release notes](https://meta.discourse.org/tag/release-notes) or view the [raw GitHub changelog](https://github.com/discourse/discourse/commits/main)
+      - See what's new in the [release notes](https://releases.discourse.org/changelog/%{new_version})
 
       - Visit [meta.discourse.org](https://meta.discourse.org) for news, discussion, and support for Discourse
 
@@ -3370,7 +3373,7 @@ en:
 
       - Update using our easy **[one-click browser update](%{base_url}/admin/update)**
 
-      - See what's new in the [release notes](https://meta.discourse.org/tag/release-notes) or view the [raw GitHub changelog](https://github.com/discourse/discourse/commits/main)
+      - See what's new in the [release notes](https://releases.discourse.org/changelog/%{new_version})
 
       - Visit [meta.discourse.org](https://meta.discourse.org) for news, discussion, and support for Discourse
 
