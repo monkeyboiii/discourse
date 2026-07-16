@@ -4,3 +4,6 @@
 [submodule "plugins/discourse-fcm-notifications"]
 	path = plugins/discourse-fcm-notifications
 	url = git@github.com:monkeyboiii/discourse-fcm-notifications.git
+[submodule "plugins/discourse-dirtbikex-event-filters"]
+	path = plugins/discourse-dirtbikex-event-filters
+	url = git@github.com:monkeyboiii/discourse-dirtbikex-event-filters.git
