@@ -7,3 +7,6 @@
 [submodule "plugins/discourse-dirtbikex-event-filters"]
 	path = plugins/discourse-dirtbikex-event-filters
 	url = git@github.com:monkeyboiii/discourse-dirtbikex-event-filters.git
+[submodule "plugins/discourse-chat-email-default-never"]
+	path = plugins/discourse-chat-email-default-never
+	url = git@github.com:monkeyboiii/discourse-chat-email-default-never.git
